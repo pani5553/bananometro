@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Platanómetro</title>
+
+  <!-- ONNX Runtime Web (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+
+  <style>
+    body { font-family: system-ui; padding: 16px; }
+
+    .wrap { width: 360px; position: relative; }
+    video {
+      width: 360px;
+      border-radius: 10px;
+      display: block;
+      background: #000;
+    }
+
+    /* Overlay / recuadro centrado */
+    .frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 220px;
+      height: 220px;
+      transform: translate(-50%, -50%);
+      border: 3px solid rgba(0,255,0,0.75);
+      border-radius: 10px;
+      pointer-events: none;
+      box-shadow: 0 0 0 9999px rgba(0,0,0,0.15);
+    }
+
+    .status { margin-top: 10px; width: 360px; }
+    .hint { color: #666; font-size: 14px; margin-top: 6px; }
+    .error { color: #b00020; white-space: pre-wrap; margin-top: 8px; }
+  </style>
+</head>
+
+<body>
+  <h1>Platanómetro</h1>
+
+  <div class="wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="frame"></div>
+  </div>
+
+  <div class="status" id="status">Cargando modelo y cámara…</div>
+  <div class="hint">Coloca el plátano dentro del recuadro verde con buena luz.</div>
+  <div class="error" id="error"></div>
+
+  <!-- Canvas oculto para recorte/escalado a 224x224 -->
+  <canvas id="canvas" width="224" height="224" style="display:none;"></canvas>
+
+  <!-- Lógica principal -->
+  <script src="./app.js"></script>
+</body>
+</html>
