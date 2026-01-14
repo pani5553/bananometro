@@ -14,8 +14,8 @@ const PERFECT_CLASS = "perfecto";
 
 // Config detector
 const DET_INTERVAL_MS = 800;     // cada cuánto detectamos (sube si va lento)
-const BANANA_MIN_SCORE = 0.45;   // umbral detector (bájalo si no detecta)
-const BBOX_MARGIN = 0.25;        // margen alrededor del bbox (25%)
+const BANANA_MIN_SCORE = 0.30;   // umbral detector (bájalo si no detecta)
+const BBOX_MARGIN = 0.30;        // margen alrededor del bbox (25%)
 
 // Elements
 const video = document.getElementById("video");
