@@ -8,6 +8,10 @@
   <!-- ONNX Runtime Web (CDN) -->
   <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
 
+  <!-- TensorFlow.js + COCO-SSD (CDN) -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.2/dist/coco-ssd.min.js"></script>
+
   <style>
     body { font-family: system-ui; padding: 16px; }
 
@@ -19,22 +23,18 @@
       background: #000;
     }
 
-    /* Overlay / recuadro centrado */
-    .frame {
+    /* Canvas overlay para dibujar bbox del plátano */
+    canvas#overlay {
       position: absolute;
-      top: 50%;
-      left: 50%;
-      width: 220px;
-      height: 220px;
-      transform: translate(-50%, -50%);
-      border: 3px solid rgba(0,255,0,0.75);
+      left: 0; top: 0;
+      width: 360px;
+      height: auto;
       border-radius: 10px;
       pointer-events: none;
-      box-shadow: 0 0 0 9999px rgba(0,0,0,0.15);
     }
 
     .status { margin-top: 10px; width: 360px; }
-    .hint { color: #666; font-size: 14px; margin-top: 6px; }
+    .hint { color:#666; font-size: 14px; margin-top: 6px; }
     .error { color: #b00020; white-space: pre-wrap; margin-top: 8px; }
   </style>
 </head>
@@ -44,17 +44,17 @@
 
   <div class="wrap">
     <video id="video" autoplay playsinline muted></video>
-    <div class="frame"></div>
+    <canvas id="overlay"></canvas>
   </div>
 
-  <div class="status" id="status">Cargando modelo y cámara…</div>
-  <div class="hint">Coloca el plátano dentro del recuadro verde con buena luz.</div>
+  <div class="status" id="status">Cargando…</div>
+  <div class="hint" id="userbox"></div>
+  <div class="hint">Apunta al plátano. Si no lo detecta, acércalo o mejora la luz.</div>
   <div class="error" id="error"></div>
 
   <!-- Canvas oculto para recorte/escalado a 224x224 -->
   <canvas id="canvas" width="224" height="224" style="display:none;"></canvas>
 
-  <!-- Lógica principal -->
   <script src="./app.js"></script>
 </body>
 </html>

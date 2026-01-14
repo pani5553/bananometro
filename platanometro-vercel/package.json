@@ -1,7 +1,8 @@
 {
-  "functions": {
-    "api/**/*.js": {
-      "runtime": "nodejs20.x"
-    }
-  }
+  "name": "platanometro-vercel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Web estática con cámara + COCO-SSD para detectar banana y ONNX para clasificar estado. Logs mínimos en /api/log.",
+  "license": "UNLICENSED"
 }
