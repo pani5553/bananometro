@@ -206,6 +206,26 @@ function drawBboxCropToCanvas(bbox) {
   return ctx.getImageData(0, 0, IMG, IMG).data;
 }
 
+// ===== Snapshot (mini-captura) =====
+function snapshotJpegDataUrlFromVideo(maxW = 320) {
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return null;
+
+  const scale = Math.min(1, maxW / vw);
+  const w = Math.floor(vw * scale);
+  const h = Math.floor(vh * scale);
+
+  const tmp = document.createElement("canvas");
+  tmp.width = w;
+  tmp.height = h;
+
+  const ctx = tmp.getContext("2d");
+  ctx.drawImage(video, 0, 0, w, h);
+
+  return tmp.toDataURL("image/jpeg", 0.6);
+}
+
 // ===== Live state (para feedback) =====
 const liveState = {
   hasBanana: false,
@@ -219,12 +239,15 @@ const liveState = {
 // ===== Feedback buttons =====
 function bindFeedbackButtons() {
   function send(label) {
+    const snap = snapshotJpegDataUrlFromVideo(320);
+
     logUserEvent("user_feedback", {
       confirmedLabel: label,
       predictedLabel: liveState.clsLabel,
       predictedConf: Number((liveState.clsConf || 0).toFixed(4)),
       bananaScore: Number((liveState.bananaScore || 0).toFixed(4)),
-      hasBanana: !!liveState.hasBanana
+      hasBanana: !!liveState.hasBanana,
+      snapshotJpeg: snap
     });
 
     updateFeedbackText("Feedback enviado: " + label + " (gracias)");
