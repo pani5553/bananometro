@@ -1,31 +1,43 @@
 // public/app.js
 // @ts-nocheck
-// Pipeline:
-// 1) COCO-SSD detecta "banana" => bbox
-// 2) Recortamos bbox (con margen) => 224x224 => ONNX clasifica estado
 
-// Config ONNX
+// ===== ONNX =====
 const IMG = 224;
 const MEAN = [0.485, 0.456, 0.406];
 const STD  = [0.229, 0.224, 0.225];
 
-const MIN_CONF = 0.50;
+const MIN_CONF = 0.45;
 const PERFECT_CLASS = "perfecto";
 
-// Config detector
-const DET_INTERVAL_MS = 800;     // cada cuánto detectamos (sube si va lento)
-const BANANA_MIN_SCORE = 0.30;   // umbral detector (bájalo si no detecta)
-const BBOX_MARGIN = 0.30;        // margen alrededor del bbox (25%)
+// ===== Detector =====
+const DET_INTERVAL_MS = 500;     // sube si va lento (700–1200)
+const BANANA_MIN_SCORE = 0.30;   // sube si hay falsos (0.35–0.50)
+const BBOX_MARGIN = 0.35;        // margen extra para clasificador
+const HOLD_BBOX_MS = 1500;       // mantiene bbox aunque se pierda un momento
+const SMOOTH_ALPHA = 0.55;       // suaviza bbox (0..1)
 
-// Elements
+// ===== Elements =====
 const video = document.getElementById("video");
-const canvas = document.getElementById("canvas");     // 224x224 hidden
-const overlay = document.getElementById("overlay");   // dibujo bbox
+const canvas = document.getElementById("canvas");
+const overlay = document.getElementById("overlay");
 const statusEl = document.getElementById("status");
 const errorEl = document.getElementById("error");
 const userBoxEl = document.getElementById("userbox");
+const feedbackMsgEl = document.getElementById("feedback_msg");
 
-// Utils
+// Botones feedback
+const btnVerde = document.getElementById("btn_verde");
+const btnPerfecto = document.getElementById("btn_perfecto");
+const btnPasado = document.getElementById("btn_pasado");
+const btnPodrido = document.getElementById("btn_podrido");
+const btnNo = document.getElementById("btn_no");
+
+// ===== UI helpers =====
+function setStatus(t) { statusEl.textContent = t; }
+function setError(e) { errorEl.textContent = e ? String(e) : ""; }
+function updateFeedbackText(msg) { if (feedbackMsgEl) feedbackMsgEl.textContent = msg; }
+
+// ===== Math =====
 function softmax(arr) {
   let max = -Infinity;
   for (const v of arr) max = Math.max(max, v);
@@ -35,9 +47,7 @@ function softmax(arr) {
   return exps.map(e => e / sum);
 }
 
-function setStatus(text) { statusEl.textContent = text; }
-function setError(msg) { errorEl.textContent = msg ? String(msg) : ""; }
-
+// ===== User ID =====
 function getOrCreateUserId() {
   const key = "platanometro_user_id";
   let id = localStorage.getItem(key);
@@ -47,9 +57,9 @@ function getOrCreateUserId() {
   }
   return id;
 }
-
 const userId = getOrCreateUserId();
 
+// ===== Logging mínimo =====
 async function logUserEvent(event, extra = {}) {
   try {
     await fetch("/api/log", {
@@ -60,16 +70,12 @@ async function logUserEvent(event, extra = {}) {
   } catch (_) {}
 }
 
+// ===== Setup =====
 async function setupCamera() {
-  if (!navigator.mediaDevices?.getUserMedia) {
-    throw new Error("Este navegador no soporta getUserMedia (cámara).");
-  }
-
   const stream = await navigator.mediaDevices.getUserMedia({
     video: { facingMode: { ideal: "environment" } },
     audio: false
   });
-
   video.srcObject = stream;
   await video.play();
 }
@@ -78,9 +84,7 @@ async function loadLabels() {
   const res = await fetch("/models/labels.json", { cache: "no-store" });
   if (!res.ok) throw new Error("No se pudo cargar /models/labels.json");
   const labels = await res.json();
-  if (!Array.isArray(labels) || labels.length === 0) {
-    throw new Error('labels.json debe ser un array JSON, p.ej. ["pasado","perfecto","podrido","verde"]');
-  }
+  if (!Array.isArray(labels) || labels.length === 0) throw new Error("labels.json inválido");
   return labels;
 }
 
@@ -92,17 +96,11 @@ async function loadOnnxModel() {
 }
 
 async function loadDetector() {
-  // TFJS inicializa backend
-  if (typeof tf !== "undefined" && tf?.ready) {
-    await tf.ready();
-    // opcional: forzar webgl si existe
-    // try { await tf.setBackend("webgl"); } catch(_) {}
-  }
-  // cocoSsd global (por script)
+  if (typeof tf !== "undefined" && tf?.ready) await tf.ready();
   return await cocoSsd.load();
 }
 
-// Preprocess para ONNX (NCHW float32)
+// ===== Preprocess / Verdict =====
 function preprocess(imgData) {
   const input = new Float32Array(1 * 3 * IMG * IMG);
   let pR = 0, pG = IMG * IMG, pB = 2 * IMG * IMG;
@@ -124,19 +122,19 @@ function verdictFrom(label, conf) {
   return (label === PERFECT_CLASS) ? "SI" : "NO";
 }
 
-// Dibuja bbox en overlay
-function drawOverlay(bbox, labelText) {
-  const ctx = overlay.getContext("2d");
+// ===== Overlay =====
+function syncOverlayToVideo() {
   const vw = video.videoWidth || 0;
   const vh = video.videoHeight || 0;
-
-  // sincroniza tamaño real del canvas con el vídeo (para que escale bien)
-  // y luego CSS lo ajusta a 360px
   if (overlay.width !== vw || overlay.height !== vh) {
     overlay.width = vw;
     overlay.height = vh;
   }
+}
 
+function drawOverlay(bbox, titleLine, subtitleLine) {
+  const ctx = overlay.getContext("2d");
+  syncOverlayToVideo();
   ctx.clearRect(0, 0, overlay.width, overlay.height);
 
   if (!bbox) return;
@@ -147,22 +145,37 @@ function drawOverlay(bbox, labelText) {
   ctx.strokeStyle = "rgba(0,255,0,0.9)";
   ctx.strokeRect(x, y, w, h);
 
-  if (labelText) {
-    ctx.font = "20px system-ui";
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    const pad = 6;
-    const textW = ctx.measureText(labelText).width;
-    ctx.fillRect(x, Math.max(0, y - 28), textW + pad * 2, 28);
+  const label = subtitleLine ? (titleLine + " • " + subtitleLine) : titleLine;
+  if (!label) return;
 
-    ctx.fillStyle = "white";
-    ctx.fillText(labelText, x + pad, Math.max(20, y - 8));
-  }
+  ctx.font = "18px system-ui";
+  const pad = 6;
+  const textW = ctx.measureText(label).width;
+  const boxH = 26;
+  const bx = x;
+  const by = Math.max(0, y - boxH);
+
+  ctx.fillStyle = "rgba(0,0,0,0.6)";
+  ctx.fillRect(bx, by, textW + pad * 2, boxH);
+
+  ctx.fillStyle = "white";
+  ctx.fillText(label, bx + pad, by + 18);
 }
 
-// Convierte bbox a crop cuadrado con margen y lo dibuja a 224x224
+// ===== BBox smoothing & crop =====
+function smoothBbox(prev, next) {
+  if (!prev) return next;
+  const a = SMOOTH_ALPHA;
+  return [
+    prev[0] + a * (next[0] - prev[0]),
+    prev[1] + a * (next[1] - prev[1]),
+    prev[2] + a * (next[2] - prev[2]),
+    prev[3] + a * (next[3] - prev[3]),
+  ];
+}
+
 function drawBboxCropToCanvas(bbox) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
   const vw = video.videoWidth;
   const vh = video.videoHeight;
 
@@ -171,9 +184,9 @@ function drawBboxCropToCanvas(bbox) {
   // margen
   const mx = w * BBOX_MARGIN;
   const my = h * BBOX_MARGIN;
-  x = x - mx; y = y - my; w = w + 2 * mx; h = h + 2 * my;
+  x -= mx; y -= my; w += 2 * mx; h += 2 * my;
 
-  // a cuadrado
+  // cuadrado
   const side = Math.max(w, h);
   const cx = x + w / 2;
   const cy = y + h / 2;
@@ -193,18 +206,53 @@ function drawBboxCropToCanvas(bbox) {
   return ctx.getImageData(0, 0, IMG, IMG).data;
 }
 
+// ===== Live state (para feedback) =====
+const liveState = {
+  hasBanana: false,
+  bananaScore: 0,
+  bbox: null,
+  clsLabel: null,
+  clsConf: 0,
+  verdict: "",
+};
+
+// ===== Feedback buttons =====
+function bindFeedbackButtons() {
+  function send(label) {
+    logUserEvent("user_feedback", {
+      confirmedLabel: label,
+      predictedLabel: liveState.clsLabel,
+      predictedConf: Number((liveState.clsConf || 0).toFixed(4)),
+      bananaScore: Number((liveState.bananaScore || 0).toFixed(4)),
+      hasBanana: !!liveState.hasBanana
+    });
+
+    updateFeedbackText("Feedback enviado: " + label + " (gracias)");
+    setTimeout(
+      () => updateFeedbackText("Si la predicción falla, pulsa el estado correcto. (Solo se registra un evento.)"),
+      2000
+    );
+  }
+
+  btnVerde?.addEventListener("click", () => send("verde"));
+  btnPerfecto?.addEventListener("click", () => send("perfecto"));
+  btnPasado?.addEventListener("click", () => send("pasado"));
+  btnPodrido?.addEventListener("click", () => send("podrido"));
+  btnNo?.addEventListener("click", () => send("no_banana"));
+}
+
+// ===== Main loop =====
 (async function main() {
   try {
     setError("");
+    bindFeedbackButtons();
 
     // info usuario (mínimo)
     const countKey = "platanometro_connected_count";
     const prev = Number(localStorage.getItem(countKey) || "0");
     const nowCount = prev + 1;
     localStorage.setItem(countKey, String(nowCount));
-    if (userBoxEl) {
-      userBoxEl.textContent = "Usuario: " + userId + " | Conexiones (este dispositivo): " + nowCount;
-    }
+    if (userBoxEl) userBoxEl.textContent = "Usuario: " + userId + " | Conexiones (este dispositivo): " + nowCount;
 
     setStatus("Cargando labels…");
     const labels = await loadLabels();
@@ -223,10 +271,13 @@ function drawBboxCropToCanvas(bbox) {
 
     let busy = false;
 
+    // detección estable
     let lastDetTs = 0;
-    let lastBbox = null;       // bbox en coords del vídeo
-    let lastBananaScore = 0;
+    let lastSeenTs = 0;
+    let smooth = null;
+    let bananaScore = 0;
 
+    // log perfecto con cooldown
     let lastPerfectLog = 0;
 
     setInterval(async () => {
@@ -237,12 +288,12 @@ function drawBboxCropToCanvas(bbox) {
       try {
         const now = Date.now();
 
-        // 1) Detección cada DET_INTERVAL_MS
+        // --- DETECCIÓN ---
         if (now - lastDetTs > DET_INTERVAL_MS) {
           lastDetTs = now;
 
           const preds = await detector.detect(video);
-          // busca la mejor predicción "banana"
+
           let best = null;
           for (const p of preds) {
             if (p.class === "banana" && p.score >= BANANA_MIN_SCORE) {
@@ -251,26 +302,32 @@ function drawBboxCropToCanvas(bbox) {
           }
 
           if (best) {
-            lastBbox = best.bbox;       // [x,y,w,h]
-            lastBananaScore = best.score;
+            bananaScore = best.score;
+            lastSeenTs = now;
+            smooth = smoothBbox(smooth, best.bbox);
           } else {
-            lastBbox = null;
-            lastBananaScore = 0;
+            // mantenemos bbox un rato para evitar parpadeo
+            if (now - lastSeenTs > HOLD_BBOX_MS) {
+              smooth = null;
+              bananaScore = 0;
+            }
           }
         }
 
-        // 2) Overlay + mensaje
-        if (!lastBbox) {
-          drawOverlay(null, "");
+        const hasBanana = !!smooth;
+        liveState.hasBanana = hasBanana;
+        liveState.bananaScore = bananaScore;
+        liveState.bbox = smooth;
+
+        if (!hasBanana) {
+          drawOverlay(null, "", "");
           setStatus("No veo un plátano. Acércalo / céntralo / mejor luz.");
           setError("");
           return;
-        } else {
-          drawOverlay(lastBbox, "BANANA " + lastBananaScore.toFixed(2));
         }
 
-        // 3) Clasificación ONNX sobre el crop del plátano
-        const imgData = drawBboxCropToCanvas(lastBbox);
+        // --- CLASIFICACIÓN ---
+        const imgData = drawBboxCropToCanvas(smooth);
         const input = preprocess(imgData);
 
         const inputName = session.inputNames[0];
@@ -289,19 +346,25 @@ function drawBboxCropToCanvas(bbox) {
         const conf = probs[bestI];
         const verdict = verdictFrom(label, conf);
 
+        liveState.clsLabel = label;
+        liveState.clsConf = conf;
+        liveState.verdict = verdict;
+
+        drawOverlay(smooth, "BANANA " + bananaScore.toFixed(2), label + " " + conf.toFixed(2));
+
         setStatus(
-          "Detectado: banana " + lastBananaScore.toFixed(2) +
+          "Detectado: banana " + bananaScore.toFixed(2) +
           " | Estado: " + label +
           " | Conf: " + conf.toFixed(2) +
           " | Perfecto: " + verdict
         );
 
-        // Log cuando detecta "perfecto" con alta confianza (cooldown 10s)
+        // --- LOG PERFECTO ---
         if (label === PERFECT_CLASS && conf >= 0.75 && (now - lastPerfectLog) > 10000) {
           lastPerfectLog = now;
           await logUserEvent("detected_perfect", {
             conf: Number(conf.toFixed(4)),
-            bananaScore: Number(lastBananaScore.toFixed(4))
+            bananaScore: Number(bananaScore.toFixed(4))
           });
         }
 

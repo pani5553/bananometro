@@ -23,7 +23,6 @@
       background: #000;
     }
 
-    /* Canvas overlay para dibujar bbox del plátano */
     canvas#overlay {
       position: absolute;
       left: 0; top: 0;
@@ -36,6 +35,23 @@
     .status { margin-top: 10px; width: 360px; }
     .hint { color:#666; font-size: 14px; margin-top: 6px; }
     .error { color: #b00020; white-space: pre-wrap; margin-top: 8px; }
+
+    .feedback {
+      width: 360px;
+      margin-top: 10px;
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .feedback button {
+      padding: 8px 10px;
+      border-radius: 10px;
+      border: 1px solid #ccc;
+      background: #fff;
+      cursor: pointer;
+    }
+    .feedback button:active { transform: scale(0.98); }
+    .small { font-size: 12px; color:#666; margin-top: 6px; width:360px; }
   </style>
 </head>
 
@@ -49,10 +65,20 @@
 
   <div class="status" id="status">Cargando…</div>
   <div class="hint" id="userbox"></div>
+
+  <!-- Feedback mínimo del usuario -->
+  <div class="feedback">
+    <button id="btn_verde">Verde</button>
+    <button id="btn_perfecto">Perfecto</button>
+    <button id="btn_pasado">Pasado</button>
+    <button id="btn_podrido">Podrido</button>
+    <button id="btn_no">No es plátano</button>
+  </div>
+  <div class="small" id="feedback_msg">Si la predicción falla, pulsa el estado correcto. (Solo se registra un evento.)</div>
+
   <div class="hint">Apunta al plátano. Si no lo detecta, acércalo o mejora la luz.</div>
   <div class="error" id="error"></div>
 
-  <!-- Canvas oculto para recorte/escalado a 224x224 -->
   <canvas id="canvas" width="224" height="224" style="display:none;"></canvas>
 
   <script src="./app.js"></script>
